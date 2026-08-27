@@ -1,0 +1,16 @@
+{
+  "name": "storyverse",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:api": "npm --workspace @storyverse/api run start:dev",
+    "dev:mobile": "npm --prefix apps/mobile exec expo start --",
+    "dev:mobile:lan": "npm --prefix apps/mobile exec expo start -- --lan --port 8082",
+    "dev:mobile:tunnel": "npm --prefix apps/mobile exec expo start -- --tunnel --port 8082",
+    "build:android:preview": "npm --prefix apps/mobile run build:android:preview",
+    "build:android:production": "npm --prefix apps/mobile run build:android:production",
+    "test": "npm --workspace @storyverse/api test",
+    "db:generate": "npm --workspace @storyverse/api run prisma:generate",
+    "db:migrate": "npm --workspace @storyverse/api run prisma:migrate"
+  }
+}

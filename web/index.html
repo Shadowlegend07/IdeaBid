@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#090c18" />
+    <meta name="description" content="IdeaBid is where bold ideas earn attention, momentum, and investment." />
+    <title>IdeaBid — Put your idea on the map</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+    <header class="site-header shell">
+      <a class="brand" href="#top" aria-label="IdeaBid home"><span class="brand-mark"><i></i><i></i><i></i></span>idea<span>bid</span></a>
+      <nav class="main-nav" aria-label="Main navigation"><a href="#explore">Explore</a><a href="#how-it-works">How it works</a><a href="#investors">For investors</a></nav>
+      <div class="header-actions"><button class="icon-button search-trigger" aria-label="Search ideas">⌕</button><button class="icon-button theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark theme" title="Switch theme">☾</button><button class="mint-button create-trigger">Share an idea <span>↗</span></button></div>
+    </header>
+
+    <main id="top">
+      <section class="hero shell">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="live-dot"></span> The market for ideas is open</p>
+          <h1>Put your <em>next big idea</em> on the map.</h1>
+          <p class="hero-lede">A place where the world can see your idea and investors can invest into it. Post it, build momentum, and let conviction bid it upward.</p>
+          <div class="hero-actions"><button class="mint-button large create-trigger">Share your idea <span>↗</span></button><a class="text-link" href="#explore">Explore the board <b>↓</b></a></div>
+          <div class="trust-row"><p>Real ideas from builders<br />and early believers</p></div>
+        </div>
+        <div class="hero-board" aria-label="A live idea bid board preview">
+          <div class="board-top"><span class="mini-logo">◒</span><span>LIVE IDEA BOARD</span><span class="board-time">12:45 UTC</span></div>
+          <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+          <article class="featured-tile"><div class="idea-symbol bento-symbol">↗</div><h3>Live ideas from the board.</h3><p>Published ideas and current bids appear here when the API is connected.</p></article>
+        </div>
+      </section>
+
+      <section class="ticker"><div class="ticker-track"><span>Live marketplace activity appears here</span><i></i><span>Build conviction around real ideas</span><i></i><span>Discover what is next</span></div></section>
+
+      <section class="board-section shell" id="explore">
+        <div class="section-heading"><div><p class="eyebrow">DISCOVER WHAT'S NEXT</p><h2>The Idea Board</h2></div><div class="board-tools"><label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="Search ideas" /></label><button class="filter-button" id="filterButton">☷ Filters</button></div></div>
+        <div class="filter-bar" id="categoryFilters" aria-label="Idea categories"></div>
+        <div class="board-grid"><div><div class="idea-list" id="ideaList" aria-live="polite"></div><nav class="pagination" aria-label="Idea pages"><button id="previousPage" type="button">Previous</button><span id="pageStatus">Page 1</span><button id="nextPage" type="button">Next</button></nav></div><aside class="sidebar"><div class="side-card pulse-card"><div class="side-title"><span class="spark">✦</span><h3>Investor pulse</h3><span class="verified">● LIVE</span></div><div class="pulse-stat"><strong>Live data</strong><span>active bids appear when available</span></div><p>Connect the API to see current marketplace activity.</p><a href="#investors">View investor notes <b>→</b></a></div><div class="side-card movers-card"><div class="side-title"><h3>Biggest movers</h3><button>See all</button></div><div id="movers"></div></div></aside></div>
+      </section>
+
+      <section class="process-section" id="how-it-works"><div class="shell"><p class="eyebrow">BUILT FOR THE FIRST BELIEVERS</p><div class="process-head"><h2>One idea can start<br /><em>an entire company.</em></h2><p>IdeaBid turns early interest into a signal investors can see — without asking a founder to have everything figured out.</p></div><div class="process-grid"><article><span>01</span><div class="process-icon">⌁</div><h3>Share the spark</h3><p>Give your idea a title, a sharp description and, if you have one, a real plan or MVP.</p></article><article><span>02</span><div class="process-icon">◎</div><h3>Build conviction</h3><p>People upvote ideas they want to exist. Bids make that support visible and meaningful.</p></article><article><span>03</span><div class="process-icon">↗</div><h3>Meet the right people</h3><p>Investors discover ideas with real momentum and connect directly with their makers.</p></article></div></div></section>
+
+      <section class="investor-section shell" id="investors"><div class="investor-copy"><p class="eyebrow">FOR INVESTORS</p><h2>See belief form<br />before the pitch deck.</h2><p>Filter for the ideas earning attention in your thesis, follow their momentum, and be first to meet the builders behind them.</p><a class="dark-button" href="#explore">Explore ideas <span>↗</span></a></div><div class="thesis-card"><div class="thesis-head"><span>YOUR THESIS</span><button>Manage</button></div><div class="thesis-tags"><span>Choose categories</span></div><div class="match-row"><div><span class="match-score">--</span><p><b>Live matches</b><br />appear here</p></div><button class="round-arrow">→</button></div><div class="match-idea"><div><b>Connect the API to discover thesis matches.</b></div></div></div></section>
+
+      <section class="cta-section shell"><div><p class="eyebrow">YOUR TURN</p><h2>What if the idea<br />you have is the one?</h2></div><button class="mint-button large create-trigger">Post your idea <span>↗</span></button></section>
+    </main>
+    <footer class="site-footer shell"><a class="brand" href="#top"><span class="brand-mark"><i></i><i></i><i></i></span>idea<span>bid</span></a><p>© 2026 IdeaBid. Built for the ideas that move us forward.</p><div><a href="#">Terms</a><a href="#">Privacy</a><a href="#">Rules</a></div></footer>
+
+    <dialog id="ideaModal" class="modal"><form method="dialog" id="ideaForm"><button type="button" class="modal-close" data-close aria-label="Close">×</button><div class="form-kicker">POST AN IDEA</div><h2>Make it impossible to ignore.</h2><p class="form-intro">Start at $1 to put your idea on the board. You stay in control of what you share.</p><div class="form-grid"><label>Idea title<input name="title" required maxlength="80" placeholder="e.g. A refill network for groceries" /></label><label>Category<select name="category" required><option>Climate</option><option>AI & data</option><option>Health</option><option>Future of work</option><option>Consumer</option><option>Education</option></select></label></div><label>Why should this exist?<textarea name="description" required maxlength="500" placeholder="Describe the problem, the people it serves, and your unique insight."></textarea></label><label>Your plan or MVP <span class="optional">OPTIONAL</span><textarea name="mvp" maxlength="1000" placeholder="Share an MVP link, a short execution plan, or the progress you have made so far."></textarea></label><div class="bid-input"><div><span>Your opening bid</span><strong>$<input id="openingBid" name="bid" type="number" min="1" step="1" value="1" required /></strong></div><p>Minimum listing bid is <b>$1</b>. You will review it securely with Dodo Payments.</p></div><button class="mint-button large full-width" type="submit">Continue to secure checkout <span>↗</span></button><p class="fine-print">By submitting, you agree to the IdeaBid posting rules. Payment is only captured by Dodo Payments.</p></form></dialog>
+    <div id="toast" class="toast" role="status"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
