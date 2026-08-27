@@ -1,9 +1,10 @@
 FROM node:22-alpine AS build
 WORKDIR /app
-COPY package*.json ./
-COPY apps/api/package.json apps/api/package.json
+COPY api/package*.json ./api/
+WORKDIR /app/api
 RUN npm install
-COPY apps/api apps/api
-WORKDIR /app/apps/api
+WORKDIR /app
+COPY api api
+WORKDIR /app/api
 RUN npx prisma generate && npm run build
-CMD ["node", "dist/main"]
+CMD ["node", "dist/main.js"]

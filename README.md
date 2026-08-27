@@ -40,3 +40,9 @@ The repository also includes a root Expo entrypoint, so `npx expo start --clear`
 ## Security and operations
 
 Access tokens are short lived; refresh tokens are hashed and rotated. The API applies RBAC, request validation, rate limits, structured logging and a global error boundary. Object storage uses presigned S3-compatible URLs. The included Docker Compose setup is for local development; production should use managed Postgres, Redis, S3, a secret manager, TLS ingress and centralized logs/metrics.
+
+## Web deployment
+
+The Vercel project should deploy from the repository root. `vercel.json` routes the root request to the static frontend in `web/`. Redeploy the latest `master` commit after connecting the repository.
+
+Deploy the NestJS API separately using `api/Dockerfile` with the repository root as the Docker build context. Configure `DATABASE_URL`, `REDIS_URL`, `WEB_ORIGIN`, the JWT secrets, and the Dodo Payments variables on the API service. Set `window.IDEABID_API_URL` in the web deployment to the public API URL before loading `web/app.js`.
