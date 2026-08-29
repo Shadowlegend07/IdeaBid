@@ -1,27 +1,233 @@
 import { Body, CanActivate, Controller, ExecutionContext, HttpCode, Injectable, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsArray, IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
-import { PrismaService } from './prisma.service'; import * as argon from 'argon2'; import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from './prisma.service';
+import * as argon from 'argon2';
+import { JwtService } from '@nestjs/jwt';
 
-export class Credentials { @IsEmail() email!:string; @IsString() @MinLength(8) password!:string; @IsString() @MinLength(2) name!:string; @IsString() @Matches(/^[a-z0-9_]{3,24}$/i) username!:string; }
-export class LoginDto { @IsEmail() email!:string; @IsString() password!:string; }
-export class RefreshDto { @IsString() refreshToken!:string; }
-export class GoogleTokenDto { @IsString() idToken!:string; }
-export class OnboardingDto { @IsArray() @IsString({each:true}) genres!:string[]; @IsString() creationType!: 'AUDIO'|'TEXT'; }
+export class Credentials {
+  @IsEmail() email!: string;
+  @IsString() @MinLength(8) password!: string;
+  @IsString() @MinLength(2) name!: string;
+  @IsString() @Matches(/^[a-z0-9_]{3,24}$/i) username!: string;
+  @IsOptional() @IsString() @MinLength(1) bio?: string;
+}
+export class LoginDto {
+  @IsEmail() email!: string;
+  @IsString() password!: string;
+}
+export class RefreshDto { @IsString() refreshToken!: string; }
+export class GoogleTokenDto { @IsString() idToken!: string; }
+export class OnboardingDto {
+  @IsArray() @IsString({ each: true }) genres!: string[];
+  @IsString() creationType!: 'AUDIO' | 'TEXT';
+}
 
-@Injectable() export class JwtAuthGuard implements CanActivate { constructor(private jwt:JwtService){} async canActivate(context:ExecutionContext){const req=context.switchToHttp().getRequest(); const token=req.headers.authorization?.replace(/^Bearer\s+/,''); if(!token) throw new UnauthorizedException(); try {req.user=await this.jwt.verifyAsync(token,{secret:process.env.JWT_ACCESS_SECRET});return true;} catch {throw new UnauthorizedException('Session expired');} } }
-@Injectable() export class AuthService { constructor(private db:PrismaService,private jwt:JwtService){}
- async register(d:Credentials){const exists=await this.db.user.findFirst({where:{OR:[{email:d.email},{username:d.username}]}}); if(exists) throw new UnauthorizedException('Email or username already in use');const user=await this.db.user.create({data:{email:d.email,passwordHash:await argon.hash(d.password),name:d.name,username:d.username}}); return this.session(user.id,user.role,user.onboardingCompleted);}
- async login(d:LoginDto){const user=await this.db.user.findUnique({where:{email:d.email}});if(!user||!user.passwordHash||!await argon.verify(user.passwordHash,d.password))throw new UnauthorizedException('Invalid email or password');return this.session(user.id,user.role,user.onboardingCompleted)}
- async refresh(token:string){const payload=await this.jwt.verifyAsync(token,{secret:process.env.JWT_REFRESH_SECRET});const saved=await this.db.refreshToken.findFirst({where:{userId:payload.sub,expiresAt:{gt:new Date()}}});if(!saved||!await argon.verify(saved.tokenHash,token))throw new UnauthorizedException('Refresh token expired');const user=await this.db.user.findUniqueOrThrow({where:{id:payload.sub}});await this.db.refreshToken.delete({where:{id:saved.id}});return this.session(user.id,user.role,user.onboardingCompleted)}
- async google(idToken:string){const response=await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`); if(!response.ok) throw new UnauthorizedException('Google token could not be verified'); const claim=await response.json() as {aud?:string,email?:string,email_verified?:string,name?:string,sub?:string}; const allowed=process.env.GOOGLE_ANDROID_CLIENT_ID; if(!allowed||claim.aud!==allowed||!claim.email||claim.email_verified!=='true') throw new UnauthorizedException('Google token is not valid for StoryVerse'); let user=await this.db.user.findUnique({where:{email:claim.email}}); if(!user){const base=(claim.email.split('@')[0].replace(/[^a-z0-9_]/gi,'').slice(0,16)||'writer').toLowerCase();const username=`${base}_${claim.sub?.slice(-6)??Date.now()}`; user=await this.db.user.create({data:{email:claim.email,name:claim.name||base,username}});} return this.session(user.id,user.role,user.onboardingCompleted)}
- async onboarding(userId:string,d:OnboardingDto){if(!userId) throw new UnauthorizedException();return this.db.user.update({where:{id:userId},data:{preferredGenres:d.genres,preferredCreationType:d.creationType,onboardingCompleted:true},select:{id:true,name:true,username:true,onboardingCompleted:true,preferredGenres:true,preferredCreationType:true}})}
- private async session(sub:string,role:string,onboardingCompleted:boolean){const accessToken=await this.jwt.signAsync({sub,role},{secret:process.env.JWT_ACCESS_SECRET,expiresIn:'15m'});const refreshToken=await this.jwt.signAsync({sub},{secret:process.env.JWT_REFRESH_SECRET,expiresIn:'30d'});await this.db.refreshToken.create({data:{userId:sub,tokenHash:await argon.hash(refreshToken),expiresAt:new Date(Date.now()+30*864e5)}});return {accessToken,refreshToken,onboardingCompleted,user:await this.db.user.findUnique({where:{id:sub},select:{id:true,name:true,username:true,email:true,avatarUrl:true,preferredGenres:true,preferredCreationType:true,subscriptionTier:true}})} }
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  constructor(private jwt: JwtService) {}
+
+  async canActivate(context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest();
+    const token = req.headers.authorization?.replace(/^Bearer\s+/, '');
+    if (!token) throw new UnauthorizedException();
+
+    try {
+      req.user = await this.jwt.verifyAsync(token, { secret: process.env.JWT_ACCESS_SECRET });
+      return true;
+    } catch {
+      throw new UnauthorizedException('Session expired');
+    }
+  }
 }
-@ApiTags('auth') @Controller('v1/auth') export class AuthController { constructor(private auth:AuthService){}
- @Post('register') register(@Body() dto:Credentials){return this.auth.register(dto)}
- @HttpCode(200) @Post('login') login(@Body() dto:LoginDto){return this.auth.login(dto)}
- @HttpCode(200) @Post('refresh') refresh(@Body() dto:RefreshDto){return this.auth.refresh(dto.refreshToken)}
- @HttpCode(200) @Post('google') google(@Body() dto:GoogleTokenDto){return this.auth.google(dto.idToken)}
- @ApiBearerAuth() @UseGuards(JwtAuthGuard) @Post('onboarding') onboarding(@Req() req:any,@Body() dto:OnboardingDto){return this.auth.onboarding(req.user.sub,dto)}
+
+@Injectable()
+export class AuthService {
+  constructor(private db: PrismaService, private jwt: JwtService) {}
+
+  async register(d: Credentials) {
+    const email = d.email.trim().toLowerCase();
+    const username = d.username.trim();
+    const exists = await this.db.user.findFirst({
+      where: {
+        OR: [{ email }, { username }],
+      },
+    });
+
+    if (exists) throw new UnauthorizedException('Email or username already in use');
+
+    const user = await this.db.user.create({
+      data: {
+        email,
+        passwordHash: await argon.hash(d.password),
+        name: d.name.trim(),
+        username,
+        bio: d.bio?.trim() || null,
+      },
+    });
+
+    return this.session(user.id, user.role, user.onboardingCompleted);
+  }
+
+  async signup(d: Credentials) {
+    return this.register(d);
+  }
+
+  async login(d: LoginDto) {
+    const email = d.email.trim().toLowerCase();
+    const user = await this.db.user.findUnique({ where: { email } });
+
+    if (!user || !user.passwordHash || !(await argon.verify(user.passwordHash, d.password))) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    return this.session(user.id, user.role, user.onboardingCompleted);
+  }
+
+  async signin(d: LoginDto) {
+    return this.login(d);
+  }
+
+  async refresh(token: string) {
+    const payload = await this.jwt.verifyAsync(token, { secret: process.env.JWT_REFRESH_SECRET });
+    const saved = await this.db.refreshToken.findFirst({
+      where: { userId: payload.sub, expiresAt: { gt: new Date() } },
+    });
+
+    if (!saved || !(await argon.verify(saved.tokenHash, token))) {
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: payload.sub } });
+    await this.db.refreshToken.delete({ where: { id: saved.id } });
+    return this.session(user.id, user.role, user.onboardingCompleted);
+  }
+
+  async google(idToken: string) {
+    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+    if (!response.ok) throw new UnauthorizedException('Google token could not be verified');
+
+    const claim = (await response.json()) as { aud?: string; email?: string; email_verified?: string; name?: string; sub?: string };
+    const allowed = process.env.GOOGLE_ANDROID_CLIENT_ID;
+
+    if (!allowed || claim.aud !== allowed || !claim.email || claim.email_verified !== 'true') {
+      throw new UnauthorizedException('Google token is not valid for StoryVerse');
+    }
+
+    let user = await this.db.user.findUnique({ where: { email: claim.email } });
+    if (!user) {
+      const base = (claim.email.split('@')[0].replace(/[^a-z0-9_]/gi, '').slice(0, 16) || 'writer').toLowerCase();
+      const username = `${base}_${claim.sub?.slice(-6) ?? Date.now()}`;
+      user = await this.db.user.create({
+        data: {
+          email: claim.email,
+          name: claim.name || base,
+          username,
+        },
+      });
+    }
+
+    return this.session(user.id, user.role, user.onboardingCompleted);
+  }
+
+  async onboarding(userId: string, d: OnboardingDto) {
+    if (!userId) throw new UnauthorizedException();
+
+    return this.db.user.update({
+      where: { id: userId },
+      data: {
+        preferredGenres: d.genres,
+        preferredCreationType: d.creationType,
+        onboardingCompleted: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        onboardingCompleted: true,
+        preferredGenres: true,
+        preferredCreationType: true,
+      },
+    });
+  }
+
+  private async session(sub: string, role: string, onboardingCompleted: boolean) {
+    const accessToken = await this.jwt.signAsync({ sub, role }, { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' });
+    const refreshToken = await this.jwt.signAsync({ sub }, { secret: process.env.JWT_REFRESH_SECRET, expiresIn: '30d' });
+
+    await this.db.refreshToken.create({
+      data: {
+        userId: sub,
+        tokenHash: await argon.hash(refreshToken),
+        expiresAt: new Date(Date.now() + 30 * 864e5),
+      },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      onboardingCompleted,
+      user: await this.db.user.findUnique({
+        where: { id: sub },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          email: true,
+          avatarUrl: true,
+          preferredGenres: true,
+          preferredCreationType: true,
+          subscriptionTier: true,
+        },
+      }),
+    };
+  }
 }
+
+@ApiTags('auth')
+@Controller('v1/auth')
+export class AuthController {
+  constructor(private auth: AuthService) {}
+
+  @Post('register')
+  register(@Body() dto: Credentials) {
+    return this.auth.register(dto);
+  }
+
+  @Post('signup')
+  signup(@Body() dto: Credentials) {
+    return this.auth.signup(dto);
+  }
+
+  @HttpCode(200)
+  @Post('login')
+  login(@Body() dto: LoginDto) {
+    return this.auth.login(dto);
+  }
+
+  @HttpCode(200)
+  @Post('signin')
+  signin(@Body() dto: LoginDto) {
+    return this.auth.signin(dto);
+  }
+
+  @HttpCode(200)
+  @Post('refresh')
+  refresh(@Body() dto: RefreshDto) {
+    return this.auth.refresh(dto.refreshToken);
+  }
+
+  @HttpCode(200)
+  @Post('google')
+  google(@Body() dto: GoogleTokenDto) {
+    return this.auth.google(dto.idToken);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('onboarding')
+  onboarding(@Req() req: any, @Body() dto: OnboardingDto) {
+    return this.auth.onboarding(req.user.sub, dto);
+  }
+}
+
