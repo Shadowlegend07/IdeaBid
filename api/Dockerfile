@@ -16,4 +16,4 @@ RUN npm run build
 
 ENV NODE_ENV=production
 
-CMD ["node", "dist/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
