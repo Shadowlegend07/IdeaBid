@@ -1,4 +1,4 @@
-const API_URL = window.IDEABID_API_URL || localStorage.getItem('ideabid-api-url') || 'http://localhost:4000';
+const API_URL = window.IDEABID_API_URL || localStorage.getItem('ideabid-api-url') || 'https://ideabid-1yx3.onrender.com';
 const categories = ['All ideas', 'Climate', 'AI & data', 'Health', 'Future of work', 'Consumer', 'Education'];
 let ideas = [];
 let activeCategory='All ideas'; let search=''; let selectedIdea=null; let currentPage=1; let hasNextPage=false;
