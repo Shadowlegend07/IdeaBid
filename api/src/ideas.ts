@@ -74,15 +74,20 @@ export class IdeasService {
     _count: { select: { upvotes: true } },
   };
 
-  async list(page = 1, pageSize = 10, category?: string) {
+  async list(page = 1, pageSize = 10, category?: string, sort = 'top') {
     const safePage = Math.max(1, Number.isFinite(page) ? page : 1),
       safePageSize = Math.min(Math.max(1, Number.isFinite(pageSize) ? pageSize : 10), 50);
     const where = { status: 'PUBLISHED' as const, ...(category ? { category } : {}) };
+    const orderBy = sort === 'recent'
+      ? [{ createdAt: 'desc' as const }]
+      : sort === 'upvoted'
+        ? [{ upvoteCount: 'desc' as const }, { createdAt: 'desc' as const }]
+        : [{ currentBidCents: 'desc' as const }, { createdAt: 'desc' as const }];
     const [data, total] = await this.db.$transaction([
       this.db.idea.findMany({
         where,
         include: this.include,
-        orderBy: [{ currentBidCents: 'desc' }, { createdAt: 'desc' }],
+        orderBy,
         skip: (safePage - 1) * safePageSize,
         take: safePageSize,
       }),
@@ -99,6 +104,14 @@ export class IdeasService {
         hasPreviousPage: safePage > 1,
       },
     };
+  }
+
+  async listMine(userId: string) {
+    return this.db.idea.findMany({
+      where: { authorId: userId },
+      include: this.include,
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async create(userId: string, dto: CreateIdeaDto) {
@@ -144,9 +157,17 @@ export class IdeasController {
   list(
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '10',
-    @Query('category') category?: string
+    @Query('category') category?: string,
+    @Query('sort') sort = 'top'
   ) {
-    return this.ideas.list(Number(page), Number(pageSize), category);
+    return this.ideas.list(Number(page), Number(pageSize), category, sort);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('mine')
+  mine(@Req() req: any) {
+    return this.ideas.listMine(req.user.sub);
   }
 
   @ApiBearerAuth()
@@ -286,17 +307,24 @@ export class PaymentsService {
 
     const event = JSON.parse(raw.toString()) as {
       type?: string;
-      data?: { metadata?: { ideaBidId?: string }; payment_id?: string };
+      data?: {
+        metadata?: { ideaBidId?: string; ideaId?: string };
+        payment_id?: string;
+        paymentId?: string;
+      };
     };
 
     await this.db.paymentWebhookEvent.create({
       data: { id, type: event.type || 'unknown' },
     });
 
-    if (event.type === 'payment.succeeded' && event.data?.metadata?.ideaBidId) {
+    const successEvents = new Set(['payment.succeeded', 'payment.completed']);
+    const ideaBidId = event.data?.metadata?.ideaBidId;
+    const paymentId = event.data?.payment_id || event.data?.paymentId;
+    if (successEvents.has(event.type || '') && ideaBidId) {
       const paid = await this.db.ideaBid.update({
-        where: { id: event.data.metadata.ideaBidId },
-        data: { status: 'PAID', dodoPaymentId: event.data.payment_id },
+        where: { id: ideaBidId },
+        data: { status: 'PAID', ...(paymentId ? { dodoPaymentId: paymentId } : {}) },
       });
       await this.db.idea.update({
         where: { id: paid.ideaId },
