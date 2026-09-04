@@ -36,6 +36,25 @@ const CATEGORIES = [
   'Education',
 ] as const;
 
+function getWeekStart(value = new Date()) {
+  const date = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - daysSinceMonday);
+  return date;
+}
+
+function getWeekEnd(weekStart: Date) {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+  return weekEnd;
+}
+
+function momentumScore(bidTotalCents: number, upvotes: number, clicks: number, maxBid: number, maxUpvotes: number, maxClicks: number) {
+  return (maxBid ? bidTotalCents / maxBid : 0) * 0.5
+    + (maxUpvotes ? upvotes / maxUpvotes : 0) * 0.25
+    + (maxClicks ? clicks / maxClicks : 0) * 0.25;
+}
+
 class CreateIdeaDto {
   @IsString()
   @MaxLength(80)
@@ -69,6 +88,14 @@ class CreateCheckoutDto extends CreateIdeaDto {
 export class IdeasService {
   constructor(private db: PrismaService) {}
 
+  private async ensureWeeklyEntry(ideaId: string, weekStart = getWeekStart()) {
+    return this.db.weeklyEntry.upsert({
+      where: { ideaId_weekStartDate: { ideaId, weekStartDate: weekStart } },
+      create: { ideaId, weekStartDate: weekStart, weekEndDate: getWeekEnd(weekStart) },
+      update: {},
+    });
+  }
+
   private include = {
     author: { select: { name: true, username: true, avatarUrl: true } },
     _count: { select: { upvotes: true } },
@@ -78,21 +105,34 @@ export class IdeasService {
     const safePage = Math.max(1, Number.isFinite(page) ? page : 1),
       safePageSize = Math.min(Math.max(1, Number.isFinite(pageSize) ? pageSize : 10), 50);
     const where = { status: 'PUBLISHED' as const, ...(category ? { category } : {}) };
-    const orderBy = sort === 'recent'
-      ? [{ createdAt: 'desc' as const }]
-      : sort === 'upvoted'
-        ? [{ upvoteCount: 'desc' as const }, { createdAt: 'desc' as const }]
-        : [{ currentBidCents: 'desc' as const }, { createdAt: 'desc' as const }];
-    const [data, total] = await this.db.$transaction([
+    const weekStart = getWeekStart();
+    const [allIdeas, total] = await this.db.$transaction([
       this.db.idea.findMany({
         where,
-        include: this.include,
-        orderBy,
-        skip: (safePage - 1) * safePageSize,
-        take: safePageSize,
+        include: { ...this.include, weeklyEntries: { where: { weekStartDate: weekStart } } },
       }),
       this.db.idea.count({ where }),
     ]);
+    const maxByCategory = new Map<string, { bid: number; upvotes: number; clicks: number }>();
+    for (const idea of allIdeas) {
+      const entry = idea.weeklyEntries[0];
+      const current = maxByCategory.get(idea.category) || { bid: 0, upvotes: 0, clicks: 0 };
+      current.bid = Math.max(current.bid, entry?.bidTotalCents || idea.currentBidCents);
+      current.upvotes = Math.max(current.upvotes, entry?.upvotesThisWeek || idea.upvoteCount);
+      current.clicks = Math.max(current.clicks, entry?.investorClicksThisWeek || 0);
+      maxByCategory.set(idea.category, current);
+    }
+    const ranked = allIdeas.map((idea) => {
+      const entry = idea.weeklyEntries[0];
+      const max = maxByCategory.get(idea.category)!;
+      const score = momentumScore(entry?.bidTotalCents || idea.currentBidCents, entry?.upvotesThisWeek || idea.upvoteCount, entry?.investorClicksThisWeek || 0, max.bid, max.upvotes, max.clicks);
+      return { ...idea, weeklyMomentumScore: score };
+    }).sort((left, right) => {
+      if (sort === 'recent') return right.createdAt.getTime() - left.createdAt.getTime();
+      if (sort === 'upvoted') return (right.weeklyEntries[0]?.upvotesThisWeek || 0) - (left.weeklyEntries[0]?.upvotesThisWeek || 0);
+      return right.weeklyMomentumScore - left.weeklyMomentumScore;
+    });
+    const data = ranked.slice((safePage - 1) * safePageSize, safePage * safePageSize);
     return {
       data,
       pagination: {
@@ -122,7 +162,7 @@ export class IdeasService {
         description: dto.description,
         category: dto.category,
         mvpDetails: dto.mvp,
-        currentBidCents: dto.bid * 100,
+        currentBidCents: 0,
       },
     });
     return idea;
@@ -134,17 +174,80 @@ export class IdeasService {
     });
     if (!found) throw new BadRequestException('Idea is not available to upvote');
     try {
+      const weekStart = getWeekStart();
+      await this.ensureWeeklyEntry(id, weekStart);
       await this.db.$transaction([
         this.db.ideaUpvote.create({ data: { ideaId: id, userId } }),
         this.db.idea.update({
           where: { id },
           data: { upvoteCount: { increment: 1 } },
         }),
+        this.db.weeklyEntry.update({
+          where: { ideaId_weekStartDate: { ideaId: id, weekStartDate: weekStart } },
+          data: { upvotesThisWeek: { increment: 1 } },
+        }),
       ]);
       return { upvoted: true };
     } catch {
       return { upvoted: false };
     }
+  }
+
+  async resetWeeklyAuction() {
+    const weekStart = getWeekStart();
+    const nextWeekStart = new Date(weekStart);
+    nextWeekStart.setUTCDate(nextWeekStart.getUTCDate() + 7);
+    const nextWeekEnd = getWeekEnd(nextWeekStart);
+    const ideas = await this.db.idea.findMany({
+      where: { status: 'PUBLISHED' },
+      include: { weeklyEntries: { where: { weekStartDate: weekStart } } },
+    });
+    const maxByCategory = new Map<string, { bid: number; upvotes: number; clicks: number }>();
+    for (const idea of ideas) {
+      const entry = idea.weeklyEntries[0];
+      const max = maxByCategory.get(idea.category) || { bid: 0, upvotes: 0, clicks: 0 };
+      max.bid = Math.max(max.bid, entry?.bidTotalCents || 0);
+      max.upvotes = Math.max(max.upvotes, entry?.upvotesThisWeek || 0);
+      max.clicks = Math.max(max.clicks, entry?.investorClicksThisWeek || 0);
+      maxByCategory.set(idea.category, max);
+    }
+    const ranked = ideas.map((idea) => {
+      const entry = idea.weeklyEntries[0];
+      const max = maxByCategory.get(idea.category)!;
+      return { idea, entry, score: momentumScore(entry?.bidTotalCents || 0, entry?.upvotesThisWeek || 0, entry?.investorClicksThisWeek || 0, max.bid, max.upvotes, max.clicks) };
+    }).sort((left, right) => right.score - left.score);
+    const categoryRanks = new Map<string, number>();
+    const ranks = new Map<string, number>();
+    for (const item of ranked) {
+      const rank = (categoryRanks.get(item.idea.category) || 0) + 1;
+      categoryRanks.set(item.idea.category, rank);
+      ranks.set(`${item.idea.category}:${item.idea.id}`, rank);
+    }
+    await this.db.$transaction(async (tx) => {
+      for (const item of ranked) {
+        if (item.entry) {
+          await tx.weeklyHistory.upsert({
+            where: { ideaId_weekStartDate: { ideaId: item.idea.id, weekStartDate: weekStart } },
+            create: {
+              ideaId: item.idea.id,
+              weekStartDate: weekStart,
+              weekEndDate: getWeekEnd(weekStart),
+              finalRank: ranks.get(`${item.idea.category}:${item.idea.id}`),
+              finalBidTotalCents: item.entry.bidTotalCents,
+              finalUpvotes: item.entry.upvotesThisWeek,
+              finalInvestorClicks: item.entry.investorClicksThisWeek,
+            },
+            update: {},
+          });
+        }
+        await tx.weeklyEntry.upsert({
+          where: { ideaId_weekStartDate: { ideaId: item.idea.id, weekStartDate: nextWeekStart } },
+          create: { ideaId: item.idea.id, weekStartDate: nextWeekStart, weekEndDate: nextWeekEnd },
+          update: {},
+        });
+      }
+    });
+    return { reset: true, archivedWeek: weekStart.toISOString(), nextWeek: nextWeekStart.toISOString(), ideas: ranked.length };
   }
 }
 
@@ -197,6 +300,7 @@ export class PaymentsService {
 
   async ideaCheckout(userId: string, d: CreateCheckoutDto) {
     const amountCents = d.bid * 100;
+    const weekStart = getWeekStart();
     let ideaId = d.ideaId;
 
     if (!ideaId) {
@@ -207,7 +311,7 @@ export class PaymentsService {
           description: d.description,
           category: d.category,
           mvpDetails: d.mvp,
-          currentBidCents: amountCents,
+          currentBidCents: 0,
         },
       });
       ideaId = idea.id;
@@ -220,6 +324,11 @@ export class PaymentsService {
 
     const bid = await this.db.ideaBid.create({
       data: { ideaId, bidderId: userId, amountCents },
+    });
+    await this.db.weeklyEntry.upsert({
+      where: { ideaId_weekStartDate: { ideaId, weekStartDate: weekStart } },
+      create: { ideaId, weekStartDate: weekStart, weekEndDate: getWeekEnd(weekStart) },
+      update: {},
     });
 
     const apiKey = process.env.DODO_PAYMENTS_API_KEY,
@@ -248,7 +357,15 @@ export class PaymentsService {
         product_cart: [{ product_id: productId, quantity: d.bid }],
         customer: { email: user.email, name: user.name },
         return_url: `${appUrl}/?checkout=success`,
-        metadata: { ideaBidId: bid.id, ideaId },
+        metadata: {
+          ideaBidId: bid.id,
+          ideaId,
+          userId,
+          weekStartDate: weekStart.toISOString(),
+          idea_id: ideaId,
+          user_id: userId,
+          week_start_date: weekStart.toISOString(),
+        },
       }),
     });
 
@@ -307,8 +424,9 @@ export class PaymentsService {
 
     const event = JSON.parse(raw.toString()) as {
       type?: string;
+      metadata?: { ideaBidId?: string; ideaId?: string; idea_id?: string; weekStartDate?: string; week_start_date?: string };
       data?: {
-        metadata?: { ideaBidId?: string; ideaId?: string };
+        metadata?: { ideaBidId?: string; ideaId?: string; idea_id?: string; weekStartDate?: string; week_start_date?: string };
         payment_id?: string;
         paymentId?: string;
       };
@@ -319,7 +437,8 @@ export class PaymentsService {
     });
 
     const successEvents = new Set(['payment.succeeded', 'payment.completed']);
-    const ideaBidId = event.data?.metadata?.ideaBidId;
+    const metadata = event.data?.metadata || event.metadata;
+    const ideaBidId = metadata?.ideaBidId;
     const paymentId = event.data?.payment_id || event.data?.paymentId;
     if (successEvents.has(event.type || '') && ideaBidId) {
       const paid = await this.db.ideaBid.update({
@@ -328,7 +447,19 @@ export class PaymentsService {
       });
       await this.db.idea.update({
         where: { id: paid.ideaId },
-        data: { status: 'PUBLISHED', currentBidCents: paid.amountCents },
+        data: { status: 'PUBLISHED', currentBidCents: { increment: paid.amountCents } },
+      });
+      const weekStart = metadata?.weekStartDate || metadata?.week_start_date;
+      const entryStart = weekStart ? new Date(weekStart) : getWeekStart();
+      await this.db.weeklyEntry.upsert({
+        where: { ideaId_weekStartDate: { ideaId: paid.ideaId, weekStartDate: entryStart } },
+        create: {
+          ideaId: paid.ideaId,
+          weekStartDate: entryStart,
+          weekEndDate: getWeekEnd(entryStart),
+          bidTotalCents: paid.amountCents,
+        },
+        update: { bidTotalCents: { increment: paid.amountCents } },
       });
     }
 
@@ -354,5 +485,17 @@ export class PaymentsController {
     @Headers() headers: Record<string, string | undefined>
   ) {
     return this.payments.webhook(req.rawBody, headers);
+  }
+}
+
+@Controller('v1/cron')
+export class AuctionCronController {
+  constructor(private ideas: IdeasService) {}
+
+  @Post('weekly-reset')
+  reset(@Headers('x-cron-secret') secret?: string) {
+    if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET)
+      throw new UnauthorizedException('Invalid cron secret');
+    return this.ideas.resetWeeklyAuction();
   }
 }

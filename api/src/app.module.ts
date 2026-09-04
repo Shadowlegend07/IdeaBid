@@ -5,11 +5,11 @@ import { PrismaService } from './prisma.service';
 import { AuthController, AuthService, JwtAuthGuard } from './auth';
 import { StoriesController, StoriesService } from './stories';
 import { ProfileController, ProfileService } from './profile';
-import { IdeasController, IdeasService, PaymentsController, PaymentsService } from './ideas';
+import { AuctionCronController, IdeasController, IdeasService, PaymentsController, PaymentsService } from './ideas';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), JwtModule.register({})],
-  controllers: [AuthController, StoriesController, ProfileController, IdeasController, PaymentsController],
+  controllers: [AuthController, StoriesController, ProfileController, IdeasController, PaymentsController, AuctionCronController],
   providers: [PrismaService, AuthService, ProfileService, StoriesService, JwtAuthGuard, IdeasService, PaymentsService],
 })
 export class AppModule {}

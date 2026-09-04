@@ -141,6 +141,8 @@ model Idea {
   updatedAt DateTime @updatedAt
   upvotes IdeaUpvote[]
   bids IdeaBid[]
+  weeklyEntries WeeklyEntry[]
+  weeklyHistory WeeklyHistory[]
   @@index([status,category,currentBidCents])
 }
 model IdeaUpvote {
@@ -164,6 +166,36 @@ model IdeaBid {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([ideaId,status,amountCents])
+}
+model WeeklyEntry {
+  id String @id @default(cuid())
+  ideaId String
+  weekStartDate DateTime
+  weekEndDate DateTime
+  bidTotalCents Int @default(0)
+  upvotesThisWeek Int @default(0)
+  investorClicksThisWeek Int @default(0)
+  momentumScore Float @default(0)
+  rankInCategory Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  idea Idea @relation(fields:[ideaId],references:[id],onDelete:Cascade)
+  @@unique([ideaId,weekStartDate])
+  @@index([weekStartDate,momentumScore])
+}
+model WeeklyHistory {
+  id String @id @default(cuid())
+  ideaId String
+  weekStartDate DateTime
+  weekEndDate DateTime
+  finalRank Int?
+  finalBidTotalCents Int
+  finalUpvotes Int
+  finalInvestorClicks Int
+  createdAt DateTime @default(now())
+  idea Idea @relation(fields:[ideaId],references:[id],onDelete:Cascade)
+  @@unique([ideaId,weekStartDate])
+  @@index([weekStartDate])
 }
 model PaymentWebhookEvent {
   id String @id
